@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Jul 16 09:51:23 2025
-
-@author: SciData
-"""
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -12,147 +5,118 @@ from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
-# --- Función de entrenamiento del modelo ---
-def entrenar_segmentador(df, n_clusters=5):
+# Segmentación de datos conocidos
+def entrenar_modelo(df, n_clusters):
     scaler = StandardScaler()
     datos_escalados = scaler.fit_transform(df)
 
     pca = PCA(n_components=2)
-    datos_reducidos = pca.fit_transform(datos_escalados)
+    datos_pca = pca.fit_transform(datos_escalados)
 
-    modelo_kmeans = KMeans(n_clusters=n_clusters, random_state=0)
-    etiquetas = modelo_kmeans.fit_predict(datos_reducidos)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=0)
+    etiquetas = kmeans.fit_predict(datos_pca)
 
-    centroides = modelo_kmeans.cluster_centers_
+    return etiquetas, scaler, pca, kmeans, datos_pca
 
-    df_result = df.copy()
-    df_result['Cluster'] = etiquetas
+# Predicción de datos nuevos
+def predecir_nuevos(df_nuevos, scaler, pca, kmeans):
+    escalados = scaler.transform(df_nuevos)
+    pca_reducidos = pca.transform(escalados)
+    predicciones = kmeans.predict(pca_reducidos)
+    return predicciones, pca_reducidos
 
-    return df_result, scaler, pca, modelo_kmeans, datos_reducidos, etiquetas, centroides
+# App Streamlit
+st.title("Segmentación con KMeans + PCA")
 
-# --- Streamlit App ---
-st.title("Segmentación con K-Means + PCA")
+# 1. Subir datos base
+archivo = st.file_uploader("Sube tu archivo CSV con datos conocidos", type=["csv"])
 
-# Subir archivo base
-archivo = st.file_uploader("Sube tu archivo CSV para segmentación (ej. clientes_segmentacion.csv)", type=["csv"])
+if archivo:
+    df_base = pd.read_csv(archivo)
+    columnas = df_base.select_dtypes(include='number').columns.tolist()
 
-if archivo is not None:
-    df = pd.read_csv(archivo)
-    columnas_numericas = df.select_dtypes(include='number').columns.tolist()
+    st.write("Columnas numéricas detectadas:")
+    st.write(columnas)
 
-    columnas_seleccionadas = st.multiselect(
-        "Selecciona columnas numéricas para clustering",
-        columnas_numericas,
-        default=columnas_numericas
-    )
+    columnas_uso = st.multiselect("Selecciona columnas para segmentación", columnas, default=columnas)
+    n_clusters = st.slider("Selecciona número de clusters", 2, 10, 5)
 
-    if columnas_seleccionadas:
-        df_numerico = df[columnas_seleccionadas]
+    if st.button("Segmentar datos conocidos"):
+        df_base_uso = df_base[columnas_uso]
+        etiquetas, scaler, pca, kmeans, datos_pca = entrenar_modelo(df_base_uso, n_clusters)
 
-        n_clusters = st.slider("Número de clusters", 2, 10, value=5)
+        df_base_resultado = df_base.copy()
+        df_base_resultado["Cluster"] = etiquetas
 
-        if st.button("Ejecutar segmentación"):
-            st.write("### Resultados del clustering")
-
-            df_resultado, scaler, pca, modelo_kmeans, datos_reducidos, etiquetas, centroides = entrenar_segmentador(df_numerico, n_clusters)
-
-            # --- Visualización base (datos originales) ---
-            fig, ax = plt.subplots(figsize=(10, 6))
-            for i in range(n_clusters):
-                ax.scatter(
-                    datos_reducidos[etiquetas == i, 0],
-                    datos_reducidos[etiquetas == i, 1],
-                    label=f'Cluster {i+1}',
-                    alpha=0.7
-                )
+        # Gráfico base
+        fig, ax = plt.subplots(figsize=(10, 6))
+        for i in range(n_clusters):
             ax.scatter(
-                centroides[:, 0], centroides[:, 1],
-                s=250, c='black', marker='*', label='Centroides'
+                datos_pca[etiquetas == i, 0],
+                datos_pca[etiquetas == i, 1],
+                label=f"Cluster {i+1}",
+                alpha=0.6
             )
-            ax.set_xlabel('PCA 1')
-            ax.set_ylabel('PCA 2')
-            ax.set_title('Segmentación con K-Means (reducción PCA)')
-            ax.legend()
-            ax.grid(True)
+        ax.set_title("Clustering de datos conocidos")
+        ax.set_xlabel("PCA 1")
+        ax.set_ylabel("PCA 2")
+        ax.legend()
+        st.pyplot(fig)
 
-            st.pyplot(fig)
-            st.dataframe(df_resultado)
+        st.write("### Datos conocidos con cluster asignado")
+        st.dataframe(df_base_resultado)
+        st.download_button(
+            "Descargar CSV con clusters",
+            data=df_base_resultado.to_csv(index=False).encode("utf-8"),
+            file_name="clientes_segmentados.csv",
+            mime="text/csv"
+        )
 
-            st.download_button(
-                label="Descargar resultados como CSV",
-                data=df_resultado.to_csv(index=False).encode('utf-8'),
-                file_name='resultados_clustering.csv',
-                mime='text/csv'
-            )
+        # 2. Subir datos nuevos
+        st.markdown("---")
+        st.subheader("¿Quieres predecir clústeres para nuevos clientes?")
+        archivo_nuevos = st.file_uploader("Sube CSV con datos nuevos", type=["csv"], key="nuevos")
 
-            # --- Predicción sobre nuevos datos ---
-            st.markdown("---")
-            st.write("### Predicción de clúster para nuevos datos")
-            archivo_nuevo = st.file_uploader("Sube archivo CSV con nuevos datos (ej. clientes_nuevos.csv)", type=["csv"], key="nuevo")
+        if archivo_nuevos:
+            df_nuevos = pd.read_csv(archivo_nuevos)
 
-            if archivo_nuevo is not None:
-                df_nuevo = pd.read_csv(archivo_nuevo)
+            # Validación
+            if list(df_nuevos.columns) != columnas_uso:
+                st.error("❌ Las columnas del archivo nuevo no coinciden con las seleccionadas.")
+            else:
+                etiquetas_nuevas, nuevos_pca = predecir_nuevos(df_nuevos, scaler, pca, kmeans)
+                df_nuevos_resultado = df_nuevos.copy()
+                df_nuevos_resultado["Cluster_Predicho"] = etiquetas_nuevas
 
-                if list(df_nuevo.columns) != columnas_seleccionadas:
-                    st.error("❌ Las columnas del nuevo archivo no coinciden exactamente con las seleccionadas.")
-                else:
-                    datos_nuevos_escalados = scaler.transform(df_nuevo)
-                    datos_nuevos_reducidos = pca.transform(datos_nuevos_escalados)
-                    etiquetas_nuevas = modelo_kmeans.predict(datos_nuevos_reducidos)
-
-                    df_nuevo_resultado = df_nuevo.copy()
-                    df_nuevo_resultado['Cluster_Predicho'] = etiquetas_nuevas
-
-                    st.write("### Nuevos datos con clústeres asignados")
-                    st.dataframe(df_nuevo_resultado)
-
-                    # --- Nueva visualización con ambos ---
-                    fig2, ax2 = plt.subplots(figsize=(10, 6))
-
-                    # Originales
-                    for i in range(n_clusters):
-                        ax2.scatter(
-                            datos_reducidos[etiquetas == i, 0],
-                            datos_reducidos[etiquetas == i, 1],
-                            label=f'Cluster {i+1}',
-                            alpha=0.5
-                        )
-
-                    # Nuevos puntos
-                    for i in range(n_clusters):
-                        puntos = datos_nuevos_reducidos[etiquetas_nuevas == i]
-                        ax2.scatter(
-                            puntos[:, 0],
-                            puntos[:, 1],
-                            marker='x',
-                            s=120,
-                            label=f'Nuevos - Cluster {i+1}'
-                        )
-
+                # Gráfico combinado
+                fig2, ax2 = plt.subplots(figsize=(10, 6))
+                for i in range(n_clusters):
                     ax2.scatter(
-                        centroides[:, 0], centroides[:, 1],
-                        s=250, c='black', marker='*', label='Centroides'
+                        datos_pca[etiquetas == i, 0],
+                        datos_pca[etiquetas == i, 1],
+                        label=f"Cluster {i+1} (conocidos)",
+                        alpha=0.4
                     )
-                    ax2.set_xlabel('PCA 1')
-                    ax2.set_ylabel('PCA 2')
-                    ax2.set_title('Segmentación con nuevos datos añadidos')
-                    ax2.legend()
-                    ax2.grid(True)
-
-                    st.pyplot(fig2)
-
-                    st.download_button(
-                        label="Descargar predicciones como CSV",
-                        data=df_nuevo_resultado.to_csv(index=False).encode('utf-8'),
-                        file_name='predicciones_clusters.csv',
-                        mime='text/csv'
+                    ax2.scatter(
+                        nuevos_pca[etiquetas_nuevas == i, 0],
+                        nuevos_pca[etiquetas_nuevas == i, 1],
+                        marker='x',
+                        s=100,
+                        label=f"Nuevos - Cluster {i+1}"
                     )
 
-# Instrucciones
-st.sidebar.markdown("""
-### Instrucciones:
-1. Sube un archivo CSV con datos numéricos (ej. clientes_segmentacion.csv)
-2. Selecciona columnas y número de clústeres
-3. Ejecuta la segmentación
-4. Después, sube nuevos datos (ej. clientes_nuevos.csv) para predecir su clúster
-""")
+                ax2.set_title("Datos conocidos y nuevos clientes")
+                ax2.set_xlabel("PCA 1")
+                ax2.set_ylabel("PCA 2")
+                ax2.legend()
+                st.pyplot(fig2)
+
+                st.write("### Nuevos clientes con cluster asignado")
+                st.dataframe(df_nuevos_resultado)
+
+                st.download_button(
+                    "Descargar predicciones",
+                    data=df_nuevos_resultado.to_csv(index=False).encode("utf-8"),
+                    file_name="clientes_nuevos_clasificados.csv",
+                    mime="text/csv"
+                )
