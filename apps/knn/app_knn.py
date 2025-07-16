@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
+import numpy as np
 
 # --- Función de clasificación supervisada ---
 def clasificar_knn(df, columna_objetivo, columnas_predictoras, n_vecinos=5):
@@ -131,12 +132,17 @@ if archivo_nuevos and "modelo_knn" in st.session_state:
             label='Datos antiguos'
         )
 
-        # Datos nuevos con estrellas negras
+        # Asignar colores a las nuevas predicciones
+        clases_unicas = pd.Series(st.session_state["y"].unique()).sort_values()
+        clase_a_num = {c:i for i,c in enumerate(clases_unicas)}
+        predicciones_num = np.array([clase_a_num[p] for p in predicciones])
+
         ax.scatter(
             X_nuevos_pca[:, 0],
             X_nuevos_pca[:, 1],
             marker='*',
-            c='black',
+            c=predicciones_num,
+            cmap='tab10',
             s=200,
             label='Datos nuevos'
         )
@@ -144,7 +150,7 @@ if archivo_nuevos and "modelo_knn" in st.session_state:
         ax.set_xlabel('PCA 1')
         ax.set_ylabel('PCA 2')
         ax.set_title('Clasificación con KNN + PCA (datos antiguos y nuevos)')
-        legend_labels = pd.Series(st.session_state["y"].unique()).sort_values().tolist()
+        legend_labels = clases_unicas.tolist()
         ax.legend(handles=scatter.legend_elements()[0], labels=legend_labels, title="Clases", loc='upper left')
         ax.legend(loc='upper right')
         ax.grid(True)
@@ -170,5 +176,5 @@ st.sidebar.markdown("""
 2. Selecciona las columnas numéricas predictoras
 3. Ajusta el número de vecinos (k)
 4. Haz clic en **Ejecutar clasificación**
-5. Opcional: Sube nuevos datos sin etiqueta para predecir sus clases y ver la gráfica conjunta
+5. Opcional: Sube nuevos datos sin etiqueta para predecir sus clases y ver la gráfica conjunta con colores
 """)
