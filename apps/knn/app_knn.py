@@ -11,39 +11,28 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-import seaborn as sns
 
 # --- Función de clasificación supervisada ---
 def clasificar_knn(df, columna_objetivo, columnas_predictoras, n_vecinos=5):
-    """
-    Aplica PCA + KNN a un DataFrame con columnas numéricas y una etiqueta.
-    """
     X = df[columnas_predictoras]
     y = df[columna_objetivo]
 
-    # Escalado
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # PCA
     pca = PCA(n_components=2)
     X_pca = pca.fit_transform(X_scaled)
 
-    # KNN
     modelo_knn = KNeighborsClassifier(n_neighbors=n_vecinos)
     modelo_knn.fit(X_pca, y)
     predicciones = modelo_knn.predict(X_pca)
 
-    # Visualización
     fig, ax = plt.subplots(figsize=(10, 6))
     scatter = ax.scatter(
         X_pca[:, 0], X_pca[:, 1],
         c=pd.factorize(y)[0],
         cmap='tab10',
         alpha=0.7,
-        label=y
     )
     ax.set_xlabel('PCA 1')
     ax.set_ylabel('PCA 2')
@@ -52,28 +41,22 @@ def clasificar_knn(df, columna_objetivo, columnas_predictoras, n_vecinos=5):
     ax.legend(handles=scatter.legend_elements()[0], labels=legend_labels, title="Clases")
     ax.grid(True)
 
-    # DataFrame con resultados
     df_result = df.copy()
     df_result['Prediccion'] = predicciones
 
-    return df_result, fig, modelo_knn, scaler, pca
+    return df_result, fig, modelo_knn, scaler, pca, X_pca, y
 
-# --- Interfaz de Streamlit ---
 st.title("Clasificación con KNN + PCA")
 
-# 1. Subir archivo
 archivo = st.file_uploader("Sube tu CSV con columna objetivo (etiquetas)", type=["csv"])
 
 if archivo is not None:
     df = pd.read_csv(archivo)
-
     st.write("Vista previa del archivo:")
     st.dataframe(df.head())
 
-    # 2. Seleccionar columna objetivo
     columna_objetivo = st.selectbox("Selecciona la columna objetivo", df.columns)
 
-    # 3. Seleccionar columnas numéricas
     columnas_numericas = df.select_dtypes(include=['number']).columns.tolist()
     columnas_predictoras = st.multiselect(
         "Selecciona columnas numéricas para la clasificación",
@@ -82,7 +65,6 @@ if archivo is not None:
     )
 
     if columnas_predictoras:
-        # 4. Número de vecinos
         n_vecinos = st.slider(
             "Número de vecinos (k)",
             min_value=1,
@@ -90,11 +72,10 @@ if archivo is not None:
             value=5
         )
 
-        # 5. Ejecutar clasificación
         if st.button("Ejecutar clasificación"):
             st.write("### Resultados de la clasificación")
 
-            df_resultado, figura, modelo_knn, scaler, pca = clasificar_knn(
+            df_resultado, figura, modelo_knn, scaler, pca, X_pca, y = clasificar_knn(
                 df, columna_objetivo, columnas_predictoras, n_vecinos
             )
 
@@ -110,15 +91,16 @@ if archivo is not None:
                 mime='text/csv'
             )
 
-            # Guardar modelos para predicciones futuras
+            # Guardar modelo y datos para predicción futura
             st.session_state["modelo_knn"] = modelo_knn
             st.session_state["scaler"] = scaler
             st.session_state["pca"] = pca
             st.session_state["columnas_predictoras"] = columnas_predictoras
+            st.session_state["X_pca"] = X_pca
+            st.session_state["y"] = y
 
-# 6. Predicción sobre nuevos datos
 st.markdown("---")
-st.subheader("¿Tienes nuevos datos sin etiqueta? Haz predicciones aquí:")
+st.subheader("Predicción para nuevos datos sin etiqueta")
 
 archivo_nuevos = st.file_uploader("Sube CSV sin columna objetivo", type=["csv"], key="nuevos")
 
@@ -135,6 +117,39 @@ if archivo_nuevos and "modelo_knn" in st.session_state:
 
         df_predicciones = df_nuevos.copy()
         df_predicciones["Prediccion"] = predicciones
+
+        # Gráfica conjunta: antiguos + nuevos
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Datos antiguos coloreados por clase
+        scatter = ax.scatter(
+            st.session_state["X_pca"][:, 0],
+            st.session_state["X_pca"][:, 1],
+            c=pd.factorize(st.session_state["y"])[0],
+            cmap='tab10',
+            alpha=0.7,
+            label='Datos antiguos'
+        )
+
+        # Datos nuevos con estrellas negras
+        ax.scatter(
+            X_nuevos_pca[:, 0],
+            X_nuevos_pca[:, 1],
+            marker='*',
+            c='black',
+            s=200,
+            label='Datos nuevos'
+        )
+
+        ax.set_xlabel('PCA 1')
+        ax.set_ylabel('PCA 2')
+        ax.set_title('Clasificación con KNN + PCA (datos antiguos y nuevos)')
+        legend_labels = pd.Series(st.session_state["y"].unique()).sort_values().tolist()
+        ax.legend(handles=scatter.legend_elements()[0], labels=legend_labels, title="Clases", loc='upper left')
+        ax.legend(loc='upper right')
+        ax.grid(True)
+
+        st.pyplot(fig)
 
         st.write("### Predicciones para nuevos datos")
         st.dataframe(df_predicciones)
@@ -155,5 +170,5 @@ st.sidebar.markdown("""
 2. Selecciona las columnas numéricas predictoras
 3. Ajusta el número de vecinos (k)
 4. Haz clic en **Ejecutar clasificación**
-5. Opcional: Sube nuevos datos sin etiqueta para predecir sus clases
+5. Opcional: Sube nuevos datos sin etiqueta para predecir sus clases y ver la gráfica conjunta
 """)
