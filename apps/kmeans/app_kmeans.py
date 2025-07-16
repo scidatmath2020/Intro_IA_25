@@ -2,7 +2,7 @@
 """
 Created on Wed Jul 16 09:51:23 2025
 
-@author: Usuario
+@author: SciData
 """
 
 import streamlit as st
