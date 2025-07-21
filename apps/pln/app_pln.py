@@ -37,7 +37,7 @@ if archivo is not None:
         frases = df[columna_texto].astype(str).values
 
         secuencias = tokenizer.texts_to_sequences(frases)
-        X = pad_sequences(secuencias, maxlen=tokenizer.document_count)
+        X = pad_sequences(secuencias, maxlen=42)
 
         predicciones = modelo.predict(X)
         clases_predichas = [diccionario_clases[np.argmax(p)] for p in predicciones]
