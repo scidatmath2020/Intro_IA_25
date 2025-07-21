@@ -19,6 +19,8 @@ from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 
+# --- Funciones auxiliares ---
+
 def descomprimir_zip(archivo_zip):
     temp_dir = tempfile.mkdtemp()
     with zipfile.ZipFile(archivo_zip, 'r') as zip_ref:
@@ -62,10 +64,12 @@ def clasificar_imagenes(modelo, lista_rutas, diccionario_clases):
             st.warning(f"⚠️ No se pudo procesar {ruta}: {e}")
     return resultados
 
+# --- Interfaz principal ---
+
 st.title("Clasificador de Imágenes Multiclase")
 st.write("Entrena un modelo con imágenes organizadas en carpetas y luego clasifica nuevas imágenes.")
 
-# Paso 1
+# Paso 1: Entrenamiento
 st.header("Paso 1: Entrenamiento")
 zip_ent = st.file_uploader("Sube ZIP con carpetas por clase", type=["zip"])
 if zip_ent:
@@ -76,12 +80,14 @@ if zip_ent:
         if st.button("Entrenar modelo"):
             modelo = crear_modelo(len(train_gen.class_indices))
             modelo.fit(train_gen, validation_data=val_gen, epochs=3)
+            loss, accuracy = modelo.evaluate(val_gen, verbose=0)
+            acc_pct = round(accuracy * 100, 2)
             st.session_state["modelo"] = modelo
             st.session_state["clases"] = train_gen.class_indices
-            st.success("✅ Modelo entrenado.")
+            st.success(f"✅ Modelo entrenado. Precisión en validación: {acc_pct}%")
             shutil.rmtree(dir_ent)
 
-# Paso 2
+# Paso 2: Clasificación
 st.header("Paso 2: Clasificación")
 if "modelo" not in st.session_state:
     st.info("Primero entrena un modelo en el Paso 1.")
@@ -103,6 +109,7 @@ else:
             st.write("Distribución:", dict(conteo))
             tsv = df_res.to_csv(sep="\t", index=False).encode("utf-8")
             st.download_button("Descargar resultados (.tsv)", tsv, "resultados.tsv", "text/tab-separated-values")
+            shutil.rmtree(dir_test)
 
 # Instrucciones
 st.sidebar.markdown("""
