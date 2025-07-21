@@ -1,5 +1,5 @@
 streamlit
 pandas
-numpy
+numpy<2
 pillow
-tensorflow
+tensorflow>=2.10,<2.16
