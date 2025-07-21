@@ -1,4 +1,0 @@
-libglib2.0-0
-libsm6
-libxrender1
-libxext6
