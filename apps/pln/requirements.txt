@@ -1,5 +1,6 @@
 streamlit>=1.28.0
-tensorflow>=2.15.0
+tensorflow-cpu==2.15.0  # Versión específica compatible
 pandas>=2.0.0
 numpy>=1.24.0
 scikit-learn>=1.0.0
+protobuf<4.0.0  # Evita conflictos con TensorFlow
