@@ -3,3 +3,4 @@ pandas
 numpy<2
 pillow
 tensorflow>=2.10,<2.16
+scipy>=1.10
