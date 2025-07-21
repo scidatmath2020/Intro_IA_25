@@ -13,7 +13,7 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 # --- Cargar modelo, tokenizer y clases ---
-modelo = load_model("modelo_sentimiento.keras")
+modelo = load_model("modelo_sentimiento.h5")
 
 with open("tokenizer.pkl", "rb") as f:
     tokenizer = pickle.load(f)
