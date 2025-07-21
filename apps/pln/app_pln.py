@@ -16,7 +16,7 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 # --- Configuración de rutas ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "modelo_sentimiento.h5")
+MODEL_PATH = os.path.join(BASE_DIR, "modelo_sentimiento_nuevo.h5")
 TOKENIZER_PATH = os.path.join(BASE_DIR, "tokenizer.pkl")
 DICT_PATH = os.path.join(BASE_DIR, "diccionario_clases.pkl")
 
@@ -36,7 +36,9 @@ except Exception as e:
 @st.cache_resource
 def cargar_recursos():
     try:
-        modelo = load_model(MODEL_PATH)
+        modelo = load_model(MODEL_PATH,compile=False)
+        modelo.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
         with open(TOKENIZER_PATH, "rb") as f:
             tokenizer = pickle.load(f)
         with open(DICT_PATH, "rb") as f:
