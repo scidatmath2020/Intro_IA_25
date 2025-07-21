@@ -1,244 +1,113 @@
+# -*- coding: utf-8 -*-
 """
-Created on Mon Jul 21 13:30:00 2025
+Created on Mon Jul 21 14:00:00 2025
+
 @author: SciData
 """
-from __future__ import annotations
-
-import io
-import os
-import shutil
-import tempfile
-from pathlib import Path
-from zipfile import ZipFile
-
-import numpy as np
-import pandas as pd
 import streamlit as st
-import tensorflow as tf
+import pandas as pd
+import numpy as np
+import os
+import zipfile
+import tempfile
+import shutil
 from PIL import Image
-from tensorflow.keras.applications import MobileNetV2
-from tensorflow.keras.layers import (Dense, Dropout, GlobalAveragePooling2D,
-                                     Input)
-from tensorflow.keras.models import Model
+from collections import Counter
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.utils import image_dataset_from_directory
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
+from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import Adam
 
-# -----------------------------------------------------------------------------#
-# 1 ─ Configuración general de la página
-# -----------------------------------------------------------------------------#
-st.set_page_config(
-    page_title="Clasificador de Imágenes (MobileNetV2)",
-    page_icon="📷",
-    layout="wide",
-)
-st.title("📷 Clasificador de Imágenes con MobileNetV2")
-st.write(
-    "Entrena un modelo a partir de un ZIP con **carpetas por clase** "
-    "y luego clasifica nuevas imágenes. Todo en el navegador."
-)
+def descomprimir_zip(archivo_zip):
+    temp_dir = tempfile.mkdtemp()
+    with zipfile.ZipFile(archivo_zip, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
+    return temp_dir
 
-# -----------------------------------------------------------------------------#
-# 2 ─ Funciones auxiliares
-# -----------------------------------------------------------------------------#
-@st.cache_resource(show_spinner=False)
-def load_base_model() -> Model:
-    """Descarga y cachea MobileNetV2 (sin la parte de clasificación)."""
-    base = MobileNetV2(
-        weights="imagenet",
-        include_top=False,
-        input_tensor=Input(shape=(224, 224, 3)),
-    )
-    base.trainable = False  # congelamos pesos
-    return base
+def crear_generadores(directorio, tamano=(224, 224), batch=32):
+    datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
+    train_gen = datagen.flow_from_directory(directorio, target_size=tamano,
+                                            batch_size=batch, class_mode='categorical', subset='training')
+    val_gen = datagen.flow_from_directory(directorio, target_size=tamano,
+                                          batch_size=batch, class_mode='categorical', subset='validation')
+    return train_gen, val_gen
 
-
-def build_model(num_classes: int) -> Model:
-    base = load_base_model()
-    x = GlobalAveragePooling2D()(base.output)
-    x = Dropout(0.3)(x)
-    output = Dense(num_classes, activation="softmax")(x)
-    model = Model(inputs=base.input, outputs=output)
-    model.compile(
-        optimizer="adam",
-        loss="categorical_crossentropy",
-        metrics=["accuracy"],
-    )
+@st.cache_resource
+def crear_modelo(num_clases):
+    base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    for layer in base_model.layers:
+        layer.trainable = False
+    x = GlobalAveragePooling2D()(base_model.output)
+    output = Dense(num_clases, activation='softmax')(x)
+    model = Model(inputs=base_model.input, outputs=output)
+    model.compile(optimizer=Adam(1e-4), loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
-
-def extract_zip(uploaded_file, to_path: Path) -> None:
-    """Extrae el Zip subido a un directorio temporal."""
-    with ZipFile(uploaded_file) as zf:
-        zf.extractall(to_path)
-
-
-def get_image_paths(root: Path) -> list[Path]:
-    """Obtiene las rutas de todas las imágenes recursivamente."""
-    return [p for p in root.rglob("*") if p.suffix.lower() in {".jpg", ".jpeg", ".png"}]
-
-
-# -----------------------------------------------------------------------------#
-# 3 ─ Subir ZIP de ENTRENAMIENTO y entrenamiento del modelo
-# -----------------------------------------------------------------------------#
-st.header("🔨 Entrenamiento")
-
-train_zip = st.file_uploader(
-    "Sube un ZIP con **carpetas por clase** para entrenar",
-    type=["zip"],
-    key="train_zip",
-)
-
-epochs = st.number_input("Épocas", 1, 20, value=3, step=1)
-
-if train_zip is not None:
-    with st.spinner("Descomprimiendo y preparando imágenes …"):
-        tmp_dir = Path(tempfile.mkdtemp())
-        extract_zip(train_zip, tmp_dir)
-
-        # ---------------------- Generadores de datos ------------------------- #
-        datagen = ImageDataGenerator(
-            rescale=1.0 / 255,
-            validation_split=0.2,
-            rotation_range=20,
-            horizontal_flip=True,
-            width_shift_range=0.1,
-            height_shift_range=0.1,
-            shear_range=0.1,
-            zoom_range=0.1,
-        )
-        train_gen = datagen.flow_from_directory(
-            tmp_dir,
-            target_size=(224, 224),
-            batch_size=16,
-            subset="training",
-            class_mode="categorical",
-        )
-        val_gen = datagen.flow_from_directory(
-            tmp_dir,
-            target_size=(224, 224),
-            batch_size=16,
-            subset="validation",
-            class_mode="categorical",
-            shuffle=False,
-        )
-
-    # ----------------------- Construir y entrenar --------------------------- #
-    st.success(
-        f"✅ Dataset cargado: **{train_gen.samples}** imágenes / "
-        f"{len(train_gen.class_indices)} clases."
-    )
-
-    if st.button("🏋️‍♂️ Entrenar modelo"):
-        model = build_model(num_classes=len(train_gen.class_indices))
-
-        prog_bar = st.progress(0.0, text="Entrenando…")
-        hist = model.fit(
-            train_gen,
-            validation_data=val_gen,
-            epochs=epochs,
-            verbose=0,
-            callbacks=[
-                tf.keras.callbacks.LambdaCallback(
-                    on_epoch_end=lambda epoch, logs: prog_bar.progress(
-                        (epoch + 1) / epochs,
-                        text=(
-                            f"Época {epoch+1}/{epochs} • "
-                            f"val_acc={logs['val_accuracy']:.2%}"
-                        ),
-                    )
-                )
-            ],
-        )
-        prog_bar.empty()
-
-        # ----------------------- Métrica final ------------------------------ #
-        val_loss, val_acc = model.evaluate(val_gen, verbose=0)
-        st.metric("📈 Exactitud en validación", f"{val_acc:.2%}")
-
-        # Guardamos el modelo en sesión (no en disco) para predecir luego
-        st.session_state["model"] = model
-        st.session_state["class_map"] = {
-            v: k for k, v in train_gen.class_indices.items()
-        }
-
-        # Limpiamos directorio temporal
-        shutil.rmtree(tmp_dir)
-
-
-# -----------------------------------------------------------------------------#
-# 4 ─ Subir ZIP para PREDICCIÓN
-# -----------------------------------------------------------------------------#
-st.header("🔎 Predicción")
-
-if "model" not in st.session_state:
-    st.info("Entrena el modelo primero para habilitar la predicción.")
-    st.stop()
-
-pred_zip = st.file_uploader(
-    "Sube un ZIP con imágenes para clasificar (carpetas opcionales)",
-    type=["zip"],
-    key="pred_zip",
-)
-
-if pred_zip is not None:
-    with st.spinner("Descomprimiendo imágenes…"):
-        tmp_pred = Path(tempfile.mkdtemp())
-        extract_zip(pred_zip, tmp_pred)
-        img_paths = get_image_paths(tmp_pred)
-        if not img_paths:
-            st.error("❌ No se encontraron imágenes válidas en el ZIP.")
-            st.stop()
-
-    model: Model = st.session_state["model"]
-    class_map: dict[int, str] = st.session_state["class_map"]
-
+def clasificar_imagenes(modelo, lista_rutas, diccionario_clases):
     resultados = []
-    bar = st.progress(0.0, "Clasificando …")
+    rev_map = {v: k for k, v in diccionario_clases.items()}
+    for ruta in lista_rutas:
+        try:
+            img = Image.open(ruta).convert("RGB").resize((224, 224))
+            arr = np.expand_dims(np.array(img) / 255.0, 0)
+            pred = modelo.predict(arr, verbose=0)
+            idx = int(np.argmax(pred))
+            resultados.append({
+                "archivo": os.path.basename(ruta),
+                "clase_predicha": rev_map[idx],
+                "confianza": round(float(np.max(pred)), 4)
+            })
+        except Exception as e:
+            st.warning(f"⚠️ No se pudo procesar {ruta}: {e}")
+    return resultados
 
-    for i, img_path in enumerate(img_paths, start=1):
-        img = Image.open(img_path).convert("RGB").resize((224, 224))
-        arr = np.array(img) / 255.0
-        pred = model.predict(arr[np.newaxis, ...], verbose=0)[0]
-        idx = int(pred.argmax())
-        resultados.append(
-            {
-                "archivo": img_path.name,
-                "clase_predicha": class_map[idx],
-                "confianza": round(float(pred[idx]), 4),
-            }
-        )
-        bar.progress(i / len(img_paths))
-    bar.empty()
+st.title("Clasificador de Imágenes Multiclase")
+st.write("Entrena un modelo con imágenes organizadas en carpetas y luego clasifica nuevas imágenes.")
 
-    df_result = pd.DataFrame(resultados).sort_values("archivo")
-    st.dataframe(df_result, use_container_width=True)
+# Paso 1
+st.header("Paso 1: Entrenamiento")
+zip_ent = st.file_uploader("Sube ZIP con carpetas por clase", type=["zip"])
+if zip_ent:
+    with st.spinner("Procesando dataset..."):
+        dir_ent = descomprimir_zip(zip_ent)
+        train_gen, val_gen = crear_generadores(dir_ent)
+        st.success(f"✅ Dataset: {train_gen.samples} imágenes en {len(train_gen.class_indices)} clases.")
+        if st.button("Entrenar modelo"):
+            modelo = crear_modelo(len(train_gen.class_indices))
+            modelo.fit(train_gen, validation_data=val_gen, epochs=5)
+            st.session_state["modelo"] = modelo
+            st.session_state["clases"] = train_gen.class_indices
+            st.success("✅ Modelo entrenado.")
+            shutil.rmtree(dir_ent)
 
-    # ----------------------- Botón de descarga ------------------------------ #
-    tsv = df_result.to_csv(sep="\t", index=False).encode("utf-8")
-    st.download_button(
-        "⬇️ Descargar resultados (.tsv)",
-        data=tsv,
-        file_name="predicciones.tsv",
-        mime="text/tab-separated-values",
-    )
+# Paso 2
+st.header("Paso 2: Clasificación")
+if "modelo" not in st.session_state:
+    st.info("Primero entrena un modelo en el Paso 1.")
+else:
+    zip_imgs = st.file_uploader("Sube ZIP con imágenes a clasificar", type=["zip"])
+    if zip_imgs:
+        with st.spinner("Clasificando..."):
+            dir_test = descomprimir_zip(zip_imgs)
+            rutas = [
+                os.path.join(dp, f)
+                for dp, _, files in os.walk(dir_test)
+                for f in files if f.lower().endswith(('.jpg','.jpeg','.png'))
+            ]
+            resultados = clasificar_imagenes(st.session_state["modelo"], rutas, st.session_state["clases"])
+            df_res = pd.DataFrame(resultados)
+            st.write("### Resultados (primeras 50 filas)")
+            st.dataframe(df_res.head(50))
+            conteo = Counter(df_res["clase_predicha"])
+            st.write("Distribución:", dict(conteo))
+            tsv = df_res.to_csv(sep="\t", index=False).encode("utf-8")
+            st.download_button("Descargar resultados (.tsv)", tsv, "resultados.tsv", "text/tab-separated-values")
 
-    # Limpieza
-    shutil.rmtree(tmp_pred)
-
-
-# -----------------------------------------------------------------------------#
-# 5 ─ Instrucciones en la barra lateral
-# -----------------------------------------------------------------------------#
-st.sidebar.markdown(
-    """
-## Pasos de uso
-1. Prepara un **ZIP** de entrenamiento  
-   *Cada carpeta = 1 clase.*  
-2. Sube el ZIP y pulsa **Entrenar modelo**  
-3. Revisa la exactitud alcanzada  
-4. Sube otro ZIP con imágenes (o carpetas)  
-5. Descarga el `.tsv` con las predicciones
-"""
-)
-
-st.sidebar.caption("App demostrativa — SciData 2025")
+# Instrucciones
+st.sidebar.markdown("""
+### Instrucciones:
+1. ZIP con carpetas (una por clase) ➤ Paso 1 ➤ Entrenar
+2. ZIP con imágenes (.jpg/.png) ➤ Paso 2 ➤ Clasificar
+3. Revisa resultados y descarga el `.tsv`
+""")
