@@ -4,7 +4,6 @@ Created on Mon Jul 21 13:30:00 2025
 
 @author: SciData
 """
-
 import streamlit as st
 import pandas as pd
 from transformers import pipeline
@@ -30,14 +29,14 @@ classifier = cargar_modelo()
 
 # --- Interfaz principal ---
 st.title("Clasificador de Sentimientos con BERT (Multilingüe)")
-st.write("Esta aplicación clasifica frases de un archivo CSV según su polaridad emocional.")
+st.write("Esta aplicación clasifica frases de un archivo TSV según su polaridad emocional.")
 
 # 1. Subida del archivo
-archivo = st.file_uploader("Sube tu archivo CSV con frases", type=["csv"])
+archivo = st.file_uploader("Sube tu archivo TSV con frases (separado por tabulaciones)", type=["tsv"])
 
 if archivo is not None:
     try:
-        df = pd.read_csv(archivo)
+        df = pd.read_csv(archivo, sep="\t")
         st.success("✅ Archivo cargado correctamente.")
 
         # 2. Selección de columna
@@ -58,23 +57,24 @@ if archivo is not None:
             st.dataframe(df[[columna, "sentimiento", "estrellas", "confianza"]])
 
             st.download_button(
-                label="Descargar resultados como CSV",
-                data=df.to_csv(index=False).encode("utf-8"),
-                file_name="resultados_sentimientos.csv",
-                mime="text/csv"
+                label="Descargar resultados como TSV",
+                data=df.to_csv(sep="\t", index=False).encode("utf-8"),
+                file_name="resultados_sentimientos.tsv",
+                mime="text/tab-separated-values"
             )
 
     except Exception as e:
         st.error(f"Ocurrió un error: {str(e)}")
 
 else:
-    st.info("Carga un archivo CSV para comenzar.")
+    st.info("Carga un archivo TSV para comenzar.")
 
 # --- Instrucciones en la barra lateral ---
 st.sidebar.markdown("""
 ### Instrucciones:
-1. Sube un archivo CSV con una columna de frases
-2. Selecciona la columna que contiene el texto
-3. Haz clic en **Ejecutar análisis de sentimientos**
-4. Descarga los resultados como archivo CSV
+1. Sube un archivo `.tsv` con una columna de frases
+2. Asegúrate de que esté separado por tabulaciones (no comas)
+3. Selecciona la columna que contiene el texto
+4. Haz clic en **Ejecutar análisis de sentimientos**
+5. Descarga los resultados como archivo `.tsv`
 """)
