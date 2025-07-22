@@ -79,7 +79,7 @@ if zip_ent:
         st.success(f"✅ Dataset: {train_gen.samples} imágenes en {len(train_gen.class_indices)} clases.")
         if st.button("Entrenar modelo"):
             modelo = crear_modelo(len(train_gen.class_indices))
-            modelo.fit(train_gen, validation_data=val_gen, epochs=1)
+            modelo.fit(train_gen, validation_data=val_gen, epochs=3)
             loss, accuracy = modelo.evaluate(val_gen, verbose=0)
             acc_pct = round(accuracy * 100, 2)
             st.session_state["modelo"] = modelo
