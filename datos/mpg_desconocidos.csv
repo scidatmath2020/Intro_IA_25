@@ -1,0 +1,11 @@
+﻿cylinders,displacement,horsepower,weight,acceleration,model_year,origin,name
+4,89,62,2050,17.3,81,japan,toyota tercel
+4,140,89,2755,15.8,77,usa,ford mustang ii 2+2
+5,131,103,2830,15.9,78,europe,audi 5000
+6,163,133,3410,15.8,78,europe,peugeot 604sl
+4,98,,2046,19,71,usa,ford pinto
+4,90,75,2108,15.5,74,europe,fiat 128
+8,455,225,4951,11,73,usa,buick electra 225 custom
+8,351,138,3955,13.2,79,usa,mercury grand marquis
+4,120,75,2542,17.5,80,japan,mazda 626
+4,156,105,2800,14.4,80,usa,dodge colt
