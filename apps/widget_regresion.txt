@@ -1,0 +1,48 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from ipywidgets import interact, FloatSlider
+
+# Datos fijos: cinco puntos (simulados o definidos manualmente)
+x = np.array([1, 2, 3, 4, 5])
+y = np.array([2.5, 3.8, 3.2, 4.5, 5.0])  # Observaciones reales (azul)
+
+def plot_regression_line(pendiente=1.0, ordenada=1.0):
+    # Cálculo de predicciones con la recta ingresada
+    y_hat = ordenada + pendiente * x
+
+    # Inicia la figura
+    plt.figure(figsize=(8, 6))
+    plt.axhline(0, color='gray', linewidth=0.5)
+    plt.axvline(0, color='gray', linewidth=0.5)
+    
+    # Dibuja los puntos reales
+    plt.scatter(x, y, color='blue', s=80, label='Puntos reales ($y_i$)')
+
+    # Dibuja las proyecciones sobre la recta (predicciones)
+    plt.scatter(x, y_hat, color='red', s=80, label='Predicciones ($\\hat{y}_i$)')
+
+    # Dibuja la recta
+    x_line = np.linspace(min(x) - 1, max(x) + 1, 100)
+    y_line = ordenada + pendiente * x_line
+    plt.plot(x_line, y_line, 'k--', label='$\\hat{y} = b_0 + b_1 x$')
+
+    # Dibuja los residuos como líneas verticales
+    for xi, yi, yhi in zip(x, y, y_hat):
+        plt.plot([xi, xi], [yi, yhi], color='gray', linestyle=':', linewidth=2)
+
+    # Estética
+    plt.title("Simulación de recta de regresión y residuos")
+    plt.xlabel("x")
+    plt.ylabel("y")
+    plt.legend()
+    plt.grid(True)
+    plt.ylim(min(min(y), min(y_hat)) - 1, max(max(y), max(y_hat)) + 1)
+    plt.xlim(min(x) - 1, max(x) + 1)
+    plt.show()
+
+# Controles interactivos
+interact(plot_regression_line,
+         pendiente=FloatSlider(value=1.0, min=-2, max=3, step=0.1, description='Pendiente $b_1$'),
+         ordenada=FloatSlider(value=1.0, min=-5, max=5, step=0.1, description='Ordenada $b_0$'))
+
+
