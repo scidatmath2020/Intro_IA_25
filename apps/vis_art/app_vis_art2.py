@@ -2,9 +2,8 @@
 """
 Created on Sun Jul 27 18:22:12 2025
 
-@author: Usuario
+@author: SciData
 """
-
 
 import streamlit as st
 import pandas as pd
@@ -24,16 +23,16 @@ from tensorflow.keras.models import Model, load_model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import backend as K
 
-# --- Reinicio seguro de sesión al principio ---
-if "reset_done" not in st.session_state:
-    st.session_state.clear()
-    gc.collect()
-    K.clear_session()
-    st.session_state["reset_done"] = True
+# Ruta persistente del modelo en el sistema temporal
+MODELO_PATH = os.path.join(tempfile.gettempdir(), "modelo_entrenado.keras")
 
 # --- Botón de reinicio manual ---
 if st.sidebar.button("🔄 Reiniciar sesión"):
     st.session_state.clear()
+    gc.collect()
+    K.clear_session()
+    if os.path.exists(MODELO_PATH):
+        os.remove(MODELO_PATH)
     st.rerun()
 
 # --- Funciones auxiliares ---
@@ -105,24 +104,19 @@ if zip_ent:
 
             if st.button("🚀 Entrenar modelo"):
                 with st.spinner("🧠 Entrenando..."):
-                    K.clear_session()
                     modelo = crear_modelo(len(train_gen.class_indices))
                     modelo.fit(train_gen, validation_data=val_gen, epochs=epocas)
                     val_loss, val_acc = modelo.evaluate(val_gen, verbose=0)
 
-                    # Guardar modelo entrenado a disco
-                    modelo_path = os.path.join(tempfile.gettempdir(), "modelo_entrenado.keras")
-                    modelo.save(modelo_path)
-                    st.session_state["modelo_path"] = modelo_path
+                    modelo.save(MODELO_PATH)
                     st.session_state["clases"] = train_gen.class_indices
 
                     st.success(f"📈 Precisión en validación: {round(val_acc * 100, 2)}%")
-
         shutil.rmtree(dir_ent)
 
 # Paso 2: Clasificación
 st.header("Paso 2: Clasificación")
-if "modelo_path" not in st.session_state or "clases" not in st.session_state:
+if not os.path.exists(MODELO_PATH):
     st.info("ℹ️ Primero entrena un modelo en el Paso 1.")
 else:
     zip_imgs = st.file_uploader("📷 Sube ZIP con imágenes a clasificar", type=["zip"])
@@ -137,9 +131,8 @@ else:
             if len(rutas) == 0:
                 st.warning("⚠️ No se encontraron imágenes válidas.")
             else:
-                # Cargar modelo desde disco
-                modelo = load_model(st.session_state["modelo_path"])
-                clases = st.session_state["clases"]
+                modelo = load_model(MODELO_PATH)
+                clases = st.session_state.get("clases", {})
                 resultados = clasificar_imagenes(modelo, rutas, clases)
                 df_res = pd.DataFrame(resultados)
                 st.write("### 📋 Resultados (primeras 50 filas)")
