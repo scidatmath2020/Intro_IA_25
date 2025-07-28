@@ -5,7 +5,7 @@ Created on Sun Jul 27 18:22:12 2025
 @author: Usuario
 """
 
-# clasificador_streamlit.py
+# app.py
 
 import streamlit as st
 import pandas as pd
@@ -14,6 +14,7 @@ import os
 import zipfile
 import tempfile
 import shutil
+import gc
 from PIL import Image
 from collections import Counter
 import tensorflow as tf
@@ -24,22 +25,28 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import backend as K
 
+# --- Reinicio seguro de sesión ---
+if "reset_done" not in st.session_state:
+    st.session_state.clear()
+    gc.collect()
+    K.clear_session()
+    st.session_state["reset_done"] = True
+
+# --- Botón manual para reiniciar ---
+if st.sidebar.button("🔄 Reiniciar sesión"):
+    st.session_state.clear()
+    st.rerun()
+
 # --- Funciones auxiliares ---
 
 def descomprimir_zip(archivo_zip):
     temp_dir = tempfile.mkdtemp()
-    try:
-        with zipfile.ZipFile(archivo_zip, 'r') as zip_ref:
-            zip_ref.extractall(temp_dir)
-    except Exception as e:
-        st.error(f"Error al descomprimir: {e}")
+    with zipfile.ZipFile(archivo_zip, 'r') as zip_ref:
+        zip_ref.extractall(temp_dir)
     return temp_dir
 
 def crear_generadores(directorio, tamano=(224, 224), batch=32):
-    datagen = ImageDataGenerator(
-        rescale=1./255,
-        validation_split=0.2
-    )
+    datagen = ImageDataGenerator(rescale=1./255, validation_split=0.2)
     train_gen = datagen.flow_from_directory(directorio, target_size=tamano,
                                             batch_size=batch, class_mode='categorical',
                                             subset='training', shuffle=True)
@@ -50,7 +57,6 @@ def crear_generadores(directorio, tamano=(224, 224), batch=32):
 
 def crear_modelo(num_clases):
     K.clear_session()
-    st.write("⚙️ Inicializando MobileNetV2...")
     base_model = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
     for layer in base_model.layers:
         layer.trainable = False
@@ -61,6 +67,9 @@ def crear_modelo(num_clases):
     return model
 
 def clasificar_imagenes(modelo, lista_rutas, diccionario_clases):
+    if not hasattr(modelo, "predict"):
+        st.error("❌ El modelo está dañado o no fue entrenado correctamente.")
+        return []
     resultados = []
     rev_map = {v: k for k, v in diccionario_clases.items()}
     for ruta in lista_rutas:
@@ -75,7 +84,7 @@ def clasificar_imagenes(modelo, lista_rutas, diccionario_clases):
                 "confianza": round(float(np.max(pred)), 4)
             })
         except Exception as e:
-            st.warning(f"⚠️ Error en {ruta}: {e}")
+            st.warning(f"⚠️ No se pudo procesar {ruta}: {e}")
     return resultados
 
 # --- Interfaz principal ---
@@ -86,25 +95,35 @@ st.write("Entrena un modelo con imágenes organizadas en carpetas y luego clasif
 
 # Paso 1: Entrenamiento
 st.header("Paso 1: Entrenamiento")
-zip_ent = st.file_uploader("📦 Sube un archivo ZIP con carpetas por clase", type=["zip"])
+zip_ent = st.file_uploader("📦 Sube ZIP con carpetas por clase", type=["zip"])
 if zip_ent:
     with st.spinner("🔍 Procesando ZIP..."):
         dir_ent = descomprimir_zip(zip_ent)
         train_gen, val_gen = crear_generadores(dir_ent)
-        
+
         if train_gen.samples == 0:
-            st.error("❌ No se encontraron imágenes válidas en el ZIP.")
+            st.error("❌ No se encontraron imágenes válidas.")
         else:
             st.success(f"✅ {train_gen.samples} imágenes, {len(train_gen.class_indices)} clases.")
             epocas = st.slider("Número de épocas", 1, 20, 3)
+
             if st.button("🚀 Entrenar modelo"):
                 with st.spinner("🧠 Entrenando..."):
+                    # Eliminar versiones anteriores
+                    for k in ["modelo", "clases"]:
+                        if k in st.session_state:
+                            del st.session_state[k]
+                    K.clear_session()
+
                     modelo = crear_modelo(len(train_gen.class_indices))
                     modelo.fit(train_gen, validation_data=val_gen, epochs=epocas)
-                    loss, accuracy = modelo.evaluate(val_gen, verbose=0)
+                    val_loss, val_acc = modelo.evaluate(val_gen, verbose=0)
+
                     st.session_state["modelo"] = modelo
                     st.session_state["clases"] = train_gen.class_indices
-                    st.success(f"📈 Precisión en validación: {round(accuracy * 100, 2)}%")
+
+                    st.success(f"📈 Precisión en validación: {round(val_acc * 100, 2)}%")
+
         shutil.rmtree(dir_ent)
 
 # Paso 2: Clasificación
@@ -114,7 +133,7 @@ if "modelo" not in st.session_state:
 else:
     zip_imgs = st.file_uploader("📷 Sube ZIP con imágenes a clasificar", type=["zip"])
     if zip_imgs:
-        with st.spinner("🔍 Clasificando imágenes..."):
+        with st.spinner("🔍 Clasificando..."):
             dir_test = descomprimir_zip(zip_imgs)
             rutas = [
                 os.path.join(dp, f)
@@ -137,7 +156,7 @@ else:
 # Instrucciones
 st.sidebar.markdown("""
 ### 🧾 Instrucciones
-1. **Entrenamiento**: ZIP con carpetas por clase ➤ Paso 1 ➤ Entrenar.
-2. **Clasificación**: ZIP con imágenes sueltas ➤ Paso 2 ➤ Clasificar.
-3. Revisa los resultados y descarga el archivo `.tsv`.
+1. ZIP con carpetas (una por clase) ➤ Paso 1 ➤ Entrenar.
+2. ZIP con imágenes ➤ Paso 2 ➤ Clasificar.
+3. Revisa y descarga el `.tsv`.
 """)
